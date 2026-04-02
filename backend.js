@@ -323,6 +323,7 @@ async function fetchMenuFromDatabase() {
 
 async function getMenuData() {
   if (!pool) {
+    requireDemoMode();
     return fallbackMenu;
   }
 
@@ -338,8 +339,8 @@ async function getMenuItemsByIds(itemIds) {
 
   const activePool = requireDatabase();
   const result = await activePool.query(
-    "select id, category_id, name, slug, description, price_paise, icon, image_url, is_featured, is_active, sort_order, prep_time_mins from menu_items where id = any($1::uuid[]) and is_active = true",
-    [itemIds],
+    "select id, category_id, name, slug, description, price_paise, icon, image_url, is_featured, is_active, sort_order, prep_time_mins from menu_items where id::text = any($1::text[]) and is_active = true",
+    [itemIds.map((itemId) => String(itemId))],
   );
 
   return result.rows;
