@@ -2,9 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "server.js": {
-      "includeFiles": [
-        "node_modules/express/lib/**"
-      ]
+      "includeFiles": "node_modules/express/lib/**"
     }
   }
 }
