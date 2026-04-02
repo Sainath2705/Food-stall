@@ -65,6 +65,6 @@ ADMIN_ACCESS_KEY=stall42-admin
 1. Push the repository to GitHub.
 2. Import the repo into Vercel.
 3. Add these environment variables in Vercel: `SUPABASE_DB_URL`, `APP_NAME`, `UPI_ID`, `UPI_NAME`, and `ADMIN_ACCESS_KEY`.
-4. Redeploy.
+4. Redeploy. If an older broken Express bundle was cached, trigger the redeploy with the build cache cleared.
 
 The app now targets Supabase instead of a local-only PostgreSQL setup, exports the Express app in a Vercel-friendly way, keeps demo mode limited to local development only, and uses `public/` for frontend assets to match Vercel’s Express guidance.

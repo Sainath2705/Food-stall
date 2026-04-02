@@ -1,6 +1,6 @@
 {
   "name": "stall-42-ordering",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Food stall ordering website for Vercel with Supabase-hosted Postgres and UPI QR checkout",
   "scripts": {
@@ -10,12 +10,13 @@
   "engines": {
     "node": "20.x"
   },
+  "packageManager": "npm@10.8.2",
   "dependencies": {
-    "@supabase/supabase-js": "^2.101.1",
-    "debug": "^4.4.3",
-    "dotenv": "^16.6.1",
-    "express": "^4.22.1",
-    "pg": "^8.20.0",
-    "qrcode": "^1.5.4"
+    "@supabase/supabase-js": "2.101.1",
+    "debug": "4.4.3",
+    "dotenv": "16.6.1",
+    "express": "4.22.1",
+    "pg": "8.20.0",
+    "qrcode": "1.5.4"
   }
 }
