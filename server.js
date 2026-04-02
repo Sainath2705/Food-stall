@@ -2,21 +2,25 @@ require("dotenv").config();
 
 const crypto = require("node:crypto");
 const path = require("node:path");
-
 const express = require("express");
 const { Pool } = require("pg");
 const QRCode = require("qrcode");
 
 const app = express();
+app.disable("x-powered-by");
+
 const PORT = Number(process.env.PORT || 3000);
 const APP_NAME = process.env.APP_NAME || "Stall 42";
-const DATABASE_URL = process.env.DATABASE_URL;
-const DEFAULT_ADMIN_ACCESS_KEY =
-  process.env.NODE_ENV === "production" ? null : "stall42-admin";
+const DATABASE_URL = String(
+  process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || "",
+).trim();
+const IS_VERCEL = process.env.VERCEL === "1";
+const IS_PRODUCTION = process.env.NODE_ENV === "production" || IS_VERCEL;
+const DEMO_MODE_ENABLED = !DATABASE_URL && !IS_PRODUCTION;
+const DEFAULT_ADMIN_ACCESS_KEY = IS_PRODUCTION ? null : "stall42-admin";
 const ADMIN_ACCESS_KEY = process.env.ADMIN_ACCESS_KEY || DEFAULT_ADMIN_ACCESS_KEY;
 const UPI_ID = process.env.UPI_ID || "sainathsherikar27@oksbi";
 const UPI_NAME = process.env.UPI_NAME || "Sainath Sherikar";
-const HAS_DATABASE = Boolean(DATABASE_URL);
 const USE_DATABASE_SSL =
   Boolean(DATABASE_URL) &&
   !DATABASE_URL.includes("localhost") &&
@@ -126,47 +130,96 @@ const fallbackMenu = [
   }
 ];
 
-const pool = DATABASE_URL
-  ? new Pool({
-      connectionString: DATABASE_URL,
-      ssl: USE_DATABASE_SSL
-        ? {
-            rejectUnauthorized: false
-          }
-        : false
-    })
-  : null;
+function createDatabasePool() {
+  if (!DATABASE_URL) {
+    return null;
+  }
 
+  if (globalThis.__stall42Pool) {
+    return globalThis.__stall42Pool;
+  }
+
+  const nextPool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: USE_DATABASE_SSL
+      ? {
+          rejectUnauthorized: false
+        }
+      : false,
+    max: 1,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+    allowExitOnIdle: true
+  });
+
+  globalThis.__stall42Pool = nextPool;
+  return nextPool;
+}
+
+const pool = createDatabasePool();
 const demoOrders = [];
 let demoOrderSequence = 1;
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+if (!IS_VERCEL) {
+  app.use(express.static(path.join(__dirname, "public")));
+}
+
+app.use((error, request, response, next) => {
+  if (error instanceof SyntaxError && error.status === 400 && "body" in error) {
+    return response.status(400).json({ error: "Invalid JSON body." });
+  }
+
+  return next(error);
+});
+
+function createHttpError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
 
 function formatError(error, fallbackMessage) {
-  if (error instanceof Error) {
+  if (error instanceof Error && error.message) {
     return error.message;
   }
 
   return fallbackMessage;
 }
 
+function getStatusCode(error, fallbackStatusCode) {
+  return Number(error?.statusCode) || fallbackStatusCode;
+}
+
+function sendError(response, error, fallbackMessage, fallbackStatusCode = 500) {
+  response.status(getStatusCode(error, fallbackStatusCode)).json({
+    error: formatError(error, fallbackMessage)
+  });
+}
+
 function requireDatabase() {
   if (!pool) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw createHttpError(503, "Supabase database is not configured.");
   }
 
   return pool;
 }
 
+function requireDemoMode() {
+  if (!DEMO_MODE_ENABLED) {
+    throw createHttpError(503, "Supabase database is not configured.");
+  }
+}
+
 function requireAdmin(request) {
   if (!ADMIN_ACCESS_KEY) {
-    throw new Error("ADMIN_ACCESS_KEY is not configured.");
+    throw createHttpError(500, "ADMIN_ACCESS_KEY is not configured.");
   }
 
   if (request.headers["x-admin-key"] !== ADMIN_ACCESS_KEY) {
-    const unauthorized = new Error("Unauthorized");
-    unauthorized.statusCode = 401;
-    throw unauthorized;
+    throw createHttpError(401, "Unauthorized");
   }
 }
 
@@ -188,14 +241,32 @@ function getFallbackItems() {
   return fallbackMenu.flatMap((category) => category.items);
 }
 
+function parseRawPayload(rawPayload) {
+  if (rawPayload && typeof rawPayload === "object") {
+    return rawPayload;
+  }
+
+  if (typeof rawPayload === "string") {
+    try {
+      return JSON.parse(rawPayload);
+    } catch (error) {
+      return {};
+    }
+  }
+
+  return {};
+}
+
 async function fetchMenuFromDatabase() {
   const activePool = requireDatabase();
-  const categoriesResult = await activePool.query(
-    "select id, name, slug, sort_order from categories order by sort_order asc",
-  );
-  const itemsResult = await activePool.query(
-    "select id, category_id, name, slug, description, price_paise, icon, image_url, is_featured, is_active, sort_order, prep_time_mins from menu_items where is_active = true order by sort_order asc",
-  );
+  const [categoriesResult, itemsResult] = await Promise.all([
+    activePool.query(
+      "select id, name, slug, sort_order from categories order by sort_order asc",
+    ),
+    activePool.query(
+      "select id, category_id, name, slug, description, price_paise, icon, image_url, is_featured, is_active, sort_order, prep_time_mins from menu_items where is_active = true order by sort_order asc",
+    )
+  ]);
 
   const itemsByCategory = new Map();
   itemsResult.rows.forEach((item) => {
@@ -220,6 +291,7 @@ async function getMenuData() {
 
 async function getMenuItemsByIds(itemIds) {
   if (!pool) {
+    requireDemoMode();
     const itemMap = new Map(getFallbackItems().map((item) => [item.id, item]));
     return itemIds.map((itemId) => itemMap.get(itemId)).filter(Boolean);
   }
@@ -241,6 +313,7 @@ function estimateReadyAt(lines, menuItems) {
   }, 5);
   const totalUnits = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
   const readyInMinutes = longestPrepTime + Math.max(2, totalUnits);
+
   return new Date(Date.now() + readyInMinutes * 60 * 1000);
 }
 
@@ -251,7 +324,7 @@ function calculateSubtotal(lines, menuItems) {
     const item = menuItemMap.get(line.itemId);
 
     if (!item) {
-      throw new Error("One of the selected items is no longer available.");
+      throw createHttpError(400, "One of the selected items is no longer available.");
     }
 
     return sum + Number(item.price_paise) * Number(line.quantity);
@@ -265,20 +338,20 @@ function validateCheckoutPayload(body) {
   const items = Array.isArray(body.items) ? body.items : [];
 
   if (customerName.length < 2) {
-    throw new Error("Please enter a valid name.");
+    throw createHttpError(400, "Please enter a valid name.");
   }
 
   if (customerPhone.length < 10) {
-    throw new Error("Please enter a valid phone number.");
+    throw createHttpError(400, "Please enter a valid phone number.");
   }
 
   if (!items.length) {
-    throw new Error("Your cart is empty.");
+    throw createHttpError(400, "Your cart is empty.");
   }
 
   items.forEach((item) => {
     if (!item.itemId || Number(item.quantity) < 1) {
-      throw new Error("Cart contains an invalid item.");
+      throw createHttpError(400, "Cart contains an invalid item.");
     }
   });
 
@@ -325,10 +398,7 @@ function attachPaymentMeta(order, paymentRow) {
     return order;
   }
 
-  const rawPayload =
-    paymentRow.raw_payload && typeof paymentRow.raw_payload === "object"
-      ? paymentRow.raw_payload
-      : {};
+  const rawPayload = parseRawPayload(paymentRow.raw_payload);
 
   order.payment_meta = {
     provider: paymentRow.provider,
@@ -343,6 +413,7 @@ function attachPaymentMeta(order, paymentRow) {
 
 async function getOrderByPublicId(publicId) {
   if (!pool) {
+    requireDemoMode();
     return demoOrders.find((order) => order.public_id === publicId) || null;
   }
 
@@ -357,14 +428,16 @@ async function getOrderByPublicId(publicId) {
   }
 
   const order = orderResult.rows[0];
-  const orderItemsResult = await activePool.query(
-    "select id, quantity, item_name, unit_price_paise from order_items where order_id = $1 order by created_at asc",
-    [order.id],
-  );
-  const paymentResult = await activePool.query(
-    "select provider, status, raw_payload, created_at from payments where order_id = $1 order by created_at desc limit 1",
-    [order.id],
-  );
+  const [orderItemsResult, paymentResult] = await Promise.all([
+    activePool.query(
+      "select id, quantity, item_name, unit_price_paise from order_items where order_id = $1 order by created_at asc",
+      [order.id],
+    ),
+    activePool.query(
+      "select provider, status, raw_payload, created_at from payments where order_id = $1 order by created_at desc limit 1",
+      [order.id],
+    )
+  ]);
 
   order.order_items = orderItemsResult.rows;
   return attachPaymentMeta(order, paymentResult.rows[0] || null);
@@ -372,6 +445,7 @@ async function getOrderByPublicId(publicId) {
 
 async function listRecentOrders() {
   if (!pool) {
+    requireDemoMode();
     return [...demoOrders].sort(
       (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
     );
@@ -382,31 +456,57 @@ async function listRecentOrders() {
     "select id, public_id, customer_name, customer_phone, notes, status, payment_status, subtotal_paise, estimated_ready_at, created_at from orders order by created_at desc limit 50",
   );
 
-  const orders = [];
-
-  for (const order of ordersResult.rows) {
-    const orderItemsResult = await activePool.query(
-      "select id, quantity, item_name, unit_price_paise from order_items where order_id = $1 order by created_at asc",
-      [order.id],
-    );
-    const paymentResult = await activePool.query(
-      "select provider, status, raw_payload, created_at from payments where order_id = $1 order by created_at desc limit 1",
-      [order.id],
-    );
-
-    orders.push(
-      attachPaymentMeta(
-        {
-          ...order,
-          order_items: orderItemsResult.rows
-        },
-        paymentResult.rows[0] || null,
-      ),
-    );
+  if (!ordersResult.rows.length) {
+    return [];
   }
 
-  return orders;
+  const orderIds = ordersResult.rows.map((order) => order.id);
+  const [orderItemsResult, paymentsResult] = await Promise.all([
+    activePool.query(
+      "select order_id, id, quantity, item_name, unit_price_paise from order_items where order_id = any($1::uuid[]) order by created_at asc",
+      [orderIds],
+    ),
+    activePool.query(
+      "select distinct on (order_id) order_id, provider, status, raw_payload, created_at from payments where order_id = any($1::uuid[]) order by order_id, created_at desc",
+      [orderIds],
+    )
+  ]);
+
+  const itemsByOrderId = new Map();
+  orderItemsResult.rows.forEach((item) => {
+    const list = itemsByOrderId.get(item.order_id) || [];
+    list.push({
+      id: item.id,
+      quantity: item.quantity,
+      item_name: item.item_name,
+      unit_price_paise: item.unit_price_paise
+    });
+    itemsByOrderId.set(item.order_id, list);
+  });
+
+  const paymentsByOrderId = new Map();
+  paymentsResult.rows.forEach((payment) => {
+    paymentsByOrderId.set(payment.order_id, payment);
+  });
+
+  return ordersResult.rows.map((order) =>
+    attachPaymentMeta(
+      {
+        ...order,
+        order_items: itemsByOrderId.get(order.id) || []
+      },
+      paymentsByOrderId.get(order.id) || null,
+    ),
+  );
 }
+
+app.get("/api/health", (request, response) => {
+  response.json({
+    ok: true,
+    database: pool ? "supabase" : DEMO_MODE_ENABLED ? "demo" : "missing",
+    appName: APP_NAME
+  });
+});
 
 app.get("/api/menu", async (request, response) => {
   try {
@@ -421,7 +521,7 @@ app.get("/api/menu", async (request, response) => {
       }
     });
   } catch (error) {
-    response.status(500).json({ error: formatError(error, "Unable to load menu.") });
+    sendError(response, error, "Unable to load menu.");
   }
 });
 
@@ -432,7 +532,9 @@ app.post("/api/checkout", async (request, response) => {
     const subtotalPaise = calculateSubtotal(validated.items, menuItems);
     const readyAt = estimateReadyAt(validated.items, menuItems);
 
-    if (!HAS_DATABASE) {
+    if (!pool) {
+      requireDemoMode();
+
       const publicId = buildDemoOrderId();
       const createdAt = new Date().toISOString();
       const menuItemMap = new Map(menuItems.map((item) => [item.id, item]));
@@ -504,7 +606,7 @@ app.post("/api/checkout", async (request, response) => {
         const item = menuItemMap.get(line.itemId);
 
         if (!item) {
-          throw new Error("One of the selected items is no longer available.");
+          throw createHttpError(400, "One of the selected items is no longer available.");
         }
 
         await databaseClient.query(
@@ -515,7 +617,7 @@ app.post("/api/checkout", async (request, response) => {
 
       await databaseClient.query("commit");
 
-      response.json({
+      return response.json({
         mode: "upi",
         order: {
           internalId: order.id,
@@ -538,7 +640,7 @@ app.post("/api/checkout", async (request, response) => {
       databaseClient.release();
     }
   } catch (error) {
-    response.status(400).json({ error: formatError(error, "Unable to start checkout.") });
+    sendError(response, error, "Unable to start checkout.", 500);
   }
 });
 
@@ -553,9 +655,9 @@ app.get("/api/upi/qr", async (request, response) => {
 
     const svg = await buildQrSvg(order);
     response.setHeader("Content-Type", "image/svg+xml");
-    response.send(svg);
+    return response.send(svg);
   } catch (error) {
-    response.status(400).json({ error: formatError(error, "Unable to generate QR.") });
+    return sendError(response, error, "Unable to generate QR.");
   }
 });
 
@@ -566,7 +668,9 @@ app.post("/api/orders/:publicId/confirm-payment", async (request, response) => {
     const paymentReference = String(request.body.paymentReference || "").trim();
     const submittedAt = new Date().toISOString();
 
-    if (!HAS_DATABASE) {
+    if (!pool) {
+      requireDemoMode();
+
       const order = demoOrders.find((entry) => entry.public_id === publicId);
 
       if (!order) {
@@ -622,14 +726,12 @@ app.post("/api/orders/:publicId/confirm-payment", async (request, response) => {
       ],
     );
 
-    response.json({
+    return response.json({
       success: true,
       redirectTo: `/success.html?orderId=${encodeURIComponent(publicId)}`
     });
   } catch (error) {
-    response
-      .status(400)
-      .json({ error: formatError(error, "Unable to confirm your payment submission.") });
+    return sendError(response, error, "Unable to confirm your payment submission.");
   }
 });
 
@@ -641,9 +743,9 @@ app.get("/api/orders/:publicId", async (request, response) => {
       return response.status(404).json({ error: "Order not found." });
     }
 
-    response.json({ order });
+    return response.json({ order });
   } catch (error) {
-    response.status(400).json({ error: formatError(error, "Unable to load order.") });
+    return sendError(response, error, "Unable to load order.");
   }
 });
 
@@ -651,11 +753,9 @@ app.get("/api/admin/orders", async (request, response) => {
   try {
     requireAdmin(request);
     const orders = await listRecentOrders();
-    response.json({ orders });
+    return response.json({ orders });
   } catch (error) {
-    response
-      .status(error?.statusCode || 400)
-      .json({ error: formatError(error, "Unable to load admin orders.") });
+    return sendError(response, error, "Unable to load admin orders.", 400);
   }
 });
 
@@ -670,6 +770,8 @@ app.patch("/api/admin/orders/:publicId", async (request, response) => {
     }
 
     if (!pool) {
+      requireDemoMode();
+
       const order = demoOrders.find((entry) => entry.public_id === request.params.publicId);
 
       if (!order) {
@@ -688,68 +790,39 @@ app.patch("/api/admin/orders/:publicId", async (request, response) => {
     }
 
     const nextStatus = request.body.status;
+    const activePool = requireDatabase();
 
-    await pool.query(
+    await activePool.query(
       "update orders set status = $1, payment_status = case when $1 = 'paid' then 'captured' else payment_status end where public_id = $2",
       [nextStatus, request.params.publicId],
     );
 
     if (nextStatus === "paid") {
-      const orderResult = await pool.query(
+      const orderResult = await activePool.query(
         "select id from orders where public_id = $1 limit 1",
         [request.params.publicId],
       );
 
       if (orderResult.rows.length) {
-        await pool.query(
+        await activePool.query(
           "update payments set status = 'captured' where order_id = $1 and status = 'authorized'",
           [orderResult.rows[0].id],
         );
       }
     }
 
-    response.json({ success: true });
+    return response.json({ success: true });
   } catch (error) {
-    response
-      .status(error?.statusCode || 400)
-      .json({ error: formatError(error, "Unable to update order status.") });
+    return sendError(response, error, "Unable to update order status.", 400);
   }
 });
 
-function sendPublicFile(response, fileName) {
-  response.sendFile(path.resolve(__dirname, fileName));
-}
+app.get("/favicon.ico", (request, response) => {
+  response.status(204).end();
+});
 
 app.get("/", (request, response) => {
-  sendPublicFile(response, "index.html");
-});
-
-app.get("/index.html", (request, response) => {
-  sendPublicFile(response, "index.html");
-});
-
-app.get("/success.html", (request, response) => {
-  sendPublicFile(response, "success.html");
-});
-
-app.get("/admin.html", (request, response) => {
-  sendPublicFile(response, "admin.html");
-});
-
-app.get("/styles.css", (request, response) => {
-  sendPublicFile(response, "styles.css");
-});
-
-app.get("/script.js", (request, response) => {
-  sendPublicFile(response, "script.js");
-});
-
-app.get("/success.js", (request, response) => {
-  sendPublicFile(response, "success.js");
-});
-
-app.get("/admin.js", (request, response) => {
-  sendPublicFile(response, "admin.js");
+  response.redirect(307, "/index.html");
 });
 
 app.use((request, response) => {
@@ -757,18 +830,28 @@ app.use((request, response) => {
     return response.status(404).json({ error: "API route not found." });
   }
 
-  sendPublicFile(response, "index.html");
-});
-
-app.listen(PORT, () => {
-  console.log(`${APP_NAME} server running on http://localhost:${PORT}`);
-  console.log(`UPI payment mode enabled for ${UPI_ID}`);
-
-  if (!HAS_DATABASE) {
-    console.log("Running without DATABASE_URL. Orders stay in memory for local demo use.");
+  if (/\.[a-z0-9]+$/i.test(request.path)) {
+    return response.status(404).send("Page not found.");
   }
 
-  if (DEFAULT_ADMIN_ACCESS_KEY && !process.env.ADMIN_ACCESS_KEY) {
-    console.log(`Using default local admin key: ${DEFAULT_ADMIN_ACCESS_KEY}`);
-  }
+  return response.redirect(307, "/index.html");
 });
+
+app.use((error, request, response, next) => {
+  console.error(error);
+  sendError(response, error, "Unexpected server error.");
+});
+
+module.exports = app;
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`${APP_NAME} server running on http://localhost:${PORT}`);
+    console.log(`UPI payment mode enabled for ${UPI_ID}`);
+    console.log(`Database mode: ${pool ? "supabase" : DEMO_MODE_ENABLED ? "demo" : "missing"}`);
+
+    if (DEFAULT_ADMIN_ACCESS_KEY && !process.env.ADMIN_ACCESS_KEY) {
+      console.log(`Using default local admin key: ${DEFAULT_ADMIN_ACCESS_KEY}`);
+    }
+  });
+}

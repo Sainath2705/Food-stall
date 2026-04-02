@@ -1,3 +1,5 @@
+-- Run this script in the Supabase SQL Editor for your project.
+
 create extension if not exists pgcrypto;
 
 create table if not exists categories (
@@ -61,6 +63,18 @@ create table if not exists payments (
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+create index if not exists menu_items_category_sort_order_idx
+  on menu_items(category_id, sort_order, created_at);
+
+create index if not exists orders_created_at_idx
+  on orders(created_at desc);
+
+create index if not exists order_items_order_created_at_idx
+  on order_items(order_id, created_at asc);
+
+create index if not exists payments_order_created_at_idx
+  on payments(order_id, created_at desc);
 
 create or replace function set_updated_at()
 returns trigger

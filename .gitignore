@@ -46,3 +46,6 @@ instance/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Vercel local metadata
+.vercel/
