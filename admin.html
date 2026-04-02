@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Staff Dashboard | Stall 42</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="page-shell topbar-inner">
+        <div>
+          <p class="eyebrow">Staff Dashboard</p>
+          <h1 class="brand">Live Stall Queue</h1>
+        </div>
+        <a class="ghost-pill" href="/">Back to Customer Menu</a>
+      </div>
+    </header>
+
+    <main class="page-shell page-space admin-space">
+      <section class="hero-card">
+        <div class="hero-copy">
+          <p class="eyebrow">Team Control Panel</p>
+          <h2>Verify UPI payments and move orders through the queue.</h2>
+          <p class="hero-text">
+            Students pay using your GPay or PhonePe QR. Use this screen to match the UPI
+            payment, then mark the order as paid, preparing, ready, and completed.
+          </p>
+        </div>
+        <div class="summary-card">
+          <p class="eyebrow">Access</p>
+          <div class="checkout-form">
+            <label>
+              <span>Admin key</span>
+              <input id="adminKeyInput" placeholder="Enter the dashboard key" type="password" />
+            </label>
+          </div>
+          <p class="hero-text" style="font-size: 14px; margin-top: 12px;">
+            Local fallback key: <strong>stall42-admin</strong>. Change
+            <code>ADMIN_ACCESS_KEY</code> in <code>.env</code> before deployment.
+          </p>
+          <div class="hero-actions">
+            <button class="primary-button" id="connectAdminButton" type="button">Connect</button>
+            <button class="ghost-pill" id="clearAdminButton" type="button">Clear</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="metric-grid">
+        <div class="metric-card">
+          <p class="eyebrow">All Orders</p>
+          <h3 id="metricTotalOrders">0</h3>
+        </div>
+        <div class="metric-card">
+          <p class="eyebrow">Active Queue</p>
+          <h3 id="metricActiveOrders">0</h3>
+        </div>
+        <div class="metric-card">
+          <p class="eyebrow">Sync Status</p>
+          <h3 id="metricSyncState">Waiting</h3>
+        </div>
+      </section>
+
+      <section class="menu-grid" id="adminOrdersGrid">
+        <div class="empty-state">
+          Connect with the admin key to start monitoring live stall orders.
+        </div>
+      </section>
+    </main>
+
+    <div class="toast hidden" id="toast"></div>
+
+    <script src="/admin.js" defer></script>
+  </body>
+</html>

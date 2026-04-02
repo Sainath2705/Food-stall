@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Order Submitted | Stall 42</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell page-space">
+      <section class="hero-card">
+        <div class="hero-copy">
+          <p class="eyebrow">Order Submitted</p>
+          <h2>Your payment was submitted for verification.</h2>
+          <p class="hero-text">
+            The stall team will confirm the UPI payment from GPay or PhonePe and then move
+            your order to paid. Keep the token ready while you wait.
+          </p>
+          <div class="hero-actions">
+            <a class="primary-button" href="/">Back to Menu</a>
+            <span class="hero-chip" id="successStatusChip">Loading order...</span>
+          </div>
+        </div>
+
+        <div class="featured-spot">
+          <div class="featured-media" id="successToken">ST42</div>
+          <div class="featured-copy">
+            <p class="eyebrow">Pickup Token</p>
+            <h3 id="successHeading">Order submitted successfully</h3>
+            <p id="successSubtext">We are waiting for payment confirmation.</p>
+            <div class="featured-meta">
+              <span id="successWaitTime">10 mins</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <div class="menu-column">
+          <div class="menu-grid" id="successOrderLines">
+            <div class="empty-state">Loading order details...</div>
+          </div>
+        </div>
+
+        <aside class="cart-card keep-mobile">
+          <div class="cart-head">
+            <div>
+              <p class="eyebrow">Payment Status</p>
+              <h3 id="successPaymentHeadline">Waiting for confirmation</h3>
+            </div>
+          </div>
+          <div class="cart-lines">
+            <div class="cart-line">
+              <div>
+                <strong>1. Keep the token ready</strong>
+                <small>Show your order token if the stall asks.</small>
+              </div>
+            </div>
+            <div class="cart-line">
+              <div>
+                <strong>2. Stay nearby</strong>
+                <small>Listen for your order number at the pickup counter.</small>
+              </div>
+            </div>
+            <div class="cart-line">
+              <div>
+                <strong>3. Payment will be checked manually</strong>
+                <small id="paymentMetaText">The team will verify your UPI payment shortly.</small>
+              </div>
+            </div>
+          </div>
+          <div class="cart-footer">
+            <div class="totals-row">
+              <span>Total</span>
+              <strong id="successTotal">₹0</strong>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/success.js" defer></script>
+  </body>
+</html>

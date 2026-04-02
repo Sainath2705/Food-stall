@@ -1,0 +1,16 @@
+{
+  "name": "stall-42-ordering",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Food stall ordering website with PostgreSQL and Razorpay",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "pg": "^8.16.0",
+    "qrcode": "^1.5.4"
+  }
+}

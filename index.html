@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stall 42 | Campus Ordering</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="page-shell topbar-inner">
+        <div>
+          <p class="eyebrow">Campus Food Stall</p>
+          <h1 class="brand">Stall 42</h1>
+        </div>
+        <a class="ghost-pill" href="/admin.html">Staff View</a>
+      </div>
+    </header>
+
+    <main class="page-shell page-space">
+      <section class="hero-card">
+        <div class="hero-copy">
+          <p class="eyebrow">Scan. Order. Pay. Pick Up.</p>
+          <h2>Quick bites built for the college rush.</h2>
+          <p class="hero-text">
+            Skip the line, pay with UPI, and collect your order when it is ready. This
+            flow is built for fast stall traffic and manual payment confirmation.
+          </p>
+          <div class="hero-actions">
+            <button class="primary-button" id="heroCheckoutButton" type="button">
+              Start Order
+            </button>
+            <span class="hero-chip" id="heroStatusChip">Loading menu...</span>
+          </div>
+        </div>
+        <div class="featured-spot" id="featuredSpot">
+          <div class="featured-media" id="featuredMedia">HOT</div>
+          <div class="featured-copy">
+            <p class="eyebrow">Bestseller</p>
+            <h3 id="featuredName">Maggi</h3>
+            <p id="featuredDescription">The classic college comfort bowl.</p>
+            <div class="featured-meta">
+              <span id="featuredPrice">₹30</span>
+              <button class="secondary-button" id="featuredAddButton" type="button">
+                Add Featured Item
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <div class="menu-column">
+          <div class="category-strip" id="categoryTabs"></div>
+          <div class="menu-grid" id="menuGrid"></div>
+        </div>
+
+        <aside class="cart-card">
+          <div class="cart-head">
+            <div>
+              <p class="eyebrow">Your Cart</p>
+              <h3>Ready to checkout</h3>
+            </div>
+            <span class="count-pill" id="cartCountPill">0 items</span>
+          </div>
+
+          <div class="cart-lines" id="cartLines">
+            <div class="empty-state">Add items from the menu to build your order.</div>
+          </div>
+
+          <div class="cart-footer">
+            <div class="totals-row">
+              <span>Total</span>
+              <strong id="cartTotal">₹0</strong>
+            </div>
+            <button class="primary-button full-width" id="checkoutButton" type="button">
+              Continue to Payment
+            </button>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <div class="mobile-cart hidden" id="mobileCartBar">
+      <div>
+        <p class="eyebrow">Cart Total</p>
+        <strong id="mobileCartTotal">₹0</strong>
+      </div>
+      <button class="primary-button" id="mobileCheckoutButton" type="button">
+        Checkout
+      </button>
+    </div>
+
+    <div class="modal hidden" id="checkoutModal">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Checkout</p>
+            <h3>Pickup details</h3>
+          </div>
+          <button class="ghost-pill" id="closeModalButton" type="button">Close</button>
+        </div>
+
+        <div class="checkout-layout">
+          <form class="checkout-form" id="checkoutForm">
+            <label>
+              <span>Name</span>
+              <input id="customerName" name="customerName" placeholder="Your name" required />
+            </label>
+            <label>
+              <span>Phone</span>
+              <input
+                id="customerPhone"
+                name="customerPhone"
+                placeholder="10 digit mobile number"
+                required
+              />
+            </label>
+            <label>
+              <span>Notes</span>
+              <textarea
+                id="customerNotes"
+                name="notes"
+                rows="4"
+                placeholder="Optional note, like less spicy or no sugar"
+              ></textarea>
+            </label>
+          </form>
+
+          <div class="summary-card">
+            <p class="eyebrow">Order Summary</p>
+            <div class="summary-lines" id="checkoutSummaryLines"></div>
+            <div class="totals-row summary-total">
+              <span>Total</span>
+              <strong id="checkoutTotal">₹0</strong>
+            </div>
+            <button class="primary-button full-width" id="payNowButton" type="button">
+              Create Order & Show QR
+            </button>
+          </div>
+        </div>
+
+        <section class="payment-step hidden" id="paymentStep">
+          <div class="payment-step-header">
+            <div>
+              <p class="eyebrow">Step 2</p>
+              <h4>Pay with Google Pay or PhonePe</h4>
+              <p>
+                Scan one of the QR cards below or open the UPI app directly, then submit
+                the payment from this page.
+              </p>
+            </div>
+            <div class="payment-amount-card">
+              <span>Total to pay</span>
+              <strong id="upiAmountValue">₹0</strong>
+            </div>
+          </div>
+
+          <div class="payment-meta-row">
+            <div class="detail-chip">
+              <span>Order Token</span>
+              <strong id="orderTokenValue">ST42</strong>
+            </div>
+            <div class="detail-chip">
+              <span>UPI ID</span>
+              <strong id="upiIdValue">sainathsherikar27@oksbi</strong>
+            </div>
+            <div class="detail-chip">
+              <span>Payee</span>
+              <strong id="upiNameValue">Sainath Sherikar</strong>
+            </div>
+            <button class="ghost-pill" id="copyUpiButton" type="button">Copy UPI ID</button>
+          </div>
+
+          <div class="payment-app-grid">
+            <article class="qr-card qr-card-gpay">
+              <div class="qr-card-head">
+                <div>
+                  <p class="eyebrow">Google Pay</p>
+                  <h5>Scan with GPay</h5>
+                </div>
+              </div>
+              <div class="qr-image-shell">
+                <img id="gpayQrImage" alt="Google Pay QR code" />
+              </div>
+              <button class="primary-button full-width payment-app-button" data-app="gpay" id="gpayOpenButton" type="button">
+                Open Google Pay
+              </button>
+            </article>
+
+            <article class="qr-card qr-card-phonepe">
+              <div class="qr-card-head">
+                <div>
+                  <p class="eyebrow">PhonePe</p>
+                  <h5>Scan with PhonePe</h5>
+                </div>
+              </div>
+              <div class="qr-image-shell">
+                <img id="phonepeQrImage" alt="PhonePe QR code" />
+              </div>
+              <button class="primary-button full-width payment-app-button" data-app="phonepe" id="phonepeOpenButton" type="button">
+                Open PhonePe
+              </button>
+            </article>
+          </div>
+
+          <label class="payment-reference-field">
+            <span>UPI reference / last 4 digits</span>
+            <input
+              id="paymentReferenceInput"
+              placeholder="Optional but helpful for matching your payment"
+            />
+          </label>
+
+          <div class="payment-step-actions">
+            <button class="primary-button" id="confirmPaymentButton" type="button">
+              I Have Paid
+            </button>
+            <p>
+              The stall team will verify your payment from GPay or PhonePe and then move
+              your order to <strong>paid</strong>.
+            </p>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="toast hidden" id="toast"></div>
+
+    <script src="/script.js" defer></script>
+  </body>
+</html>
