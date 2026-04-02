@@ -1,8 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "server.js": {
-      "includeFiles": "node_modules/express/lib/**"
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/api/orders/:publicId/confirm-payment",
+      "destination": "/api/order-confirm?publicId=:publicId"
+    },
+    {
+      "source": "/api/orders/:publicId",
+      "destination": "/api/order?publicId=:publicId"
+    },
+    {
+      "source": "/api/admin/orders/:publicId",
+      "destination": "/api/admin-order?publicId=:publicId"
     }
-  }
+  ]
 }
