@@ -1,8 +1,6 @@
 require("dotenv").config();
 
 const crypto = require("node:crypto");
-const QRCode = require("qrcode");
-const { Pool } = require("pg");
 
 const APP_NAME = process.env.APP_NAME || "Stall 42";
 const DATABASE_URL = String(
@@ -133,6 +131,8 @@ function createDatabasePool() {
     return globalThis.__stall42Pool;
   }
 
+  const { Pool } = require("pg");
+
   const nextPool = new Pool({
     connectionString: DATABASE_URL,
     ssl: USE_DATABASE_SSL
@@ -150,7 +150,15 @@ function createDatabasePool() {
   return nextPool;
 }
 
-const pool = createDatabasePool();
+let pool = null;
+let poolSetupError = null;
+
+try {
+  pool = createDatabasePool();
+} catch (error) {
+  poolSetupError = error;
+  console.error("Failed to initialize database pool.", error);
+}
 
 if (!globalThis.__stall42DemoState) {
   globalThis.__stall42DemoState = {
@@ -215,6 +223,13 @@ function sendMethodNotAllowed(response, allowedMethods) {
 }
 
 function requireDatabase() {
+  if (poolSetupError) {
+    throw createHttpError(
+      500,
+      `Database configuration error: ${formatError(poolSetupError, "Unable to initialize database.")}`,
+    );
+  }
+
   if (!pool) {
     throw createHttpError(503, "Supabase database is not configured.");
   }
@@ -406,6 +421,8 @@ function buildUpiLink(order) {
 }
 
 async function buildQrSvg(order) {
+  const QRCode = require("qrcode");
+
   return QRCode.toString(buildUpiLink(order), {
     type: "svg",
     width: 320,
@@ -607,6 +624,10 @@ function resolvePublicId(request, params = {}) {
 }
 
 function getDatabaseMode() {
+  if (poolSetupError) {
+    return "invalid";
+  }
+
   return pool ? "supabase" : DEMO_MODE_ENABLED ? "demo" : "missing";
 }
 
