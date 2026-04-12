@@ -133,6 +133,35 @@ async function updateStatus(publicId, status) {
   }
 }
 
+async function deleteOrder(publicId) {
+  const confirmed = window.confirm(`Delete order ${publicId}? This cannot be undone.`);
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    updateSyncState("Deleting");
+    const response = await fetch(`/api/admin/orders/${encodeURIComponent(publicId)}`, {
+      method: "DELETE",
+      headers: {
+        "x-admin-key": state.accessKey
+      }
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Unable to delete order.");
+    }
+
+    showToast("Order deleted.", "success");
+    fetchOrders();
+  } catch (error) {
+    updateSyncState("Error");
+    showToast(error.message || "Unable to delete order.", "error");
+  }
+}
+
 function paymentSummary(order) {
   const lines = [];
 
@@ -222,6 +251,13 @@ function renderOrders(orders) {
                 `,
               )
               .join("")}
+            <button
+              class="category-button delete-button"
+              type="button"
+              data-delete="${order.public_id}"
+            >
+              Delete
+            </button>
           </div>
         </article>
       `,
@@ -231,6 +267,12 @@ function renderOrders(orders) {
   elements.adminOrdersGrid.querySelectorAll("[data-status]").forEach((button) => {
     button.addEventListener("click", () => {
       updateStatus(button.dataset.publicId, button.dataset.status);
+    });
+  });
+
+  elements.adminOrdersGrid.querySelectorAll("[data-delete]").forEach((button) => {
+    button.addEventListener("click", () => {
+      deleteOrder(button.dataset.delete);
     });
   });
 }

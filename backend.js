@@ -18,6 +18,29 @@ const USE_DATABASE_SSL =
   !DATABASE_URL.includes("localhost") &&
   !DATABASE_URL.includes("127.0.0.1");
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 20;
+const RATE_LIMIT_ENABLED =
+  process.env.VERCEL === "1" ||
+  process.env.NODE_ENV === "production" ||
+  process.env.ENABLE_RATE_LIMIT === "1";
+const RATE_LIMIT_MESSAGE =
+  "We're handling a lot of requests right now. Please wait a minute and try again.";
+const CHECKOUT_QUEUE_LIMIT = 50;
+const CHECKOUT_QUEUE_MESSAGE = "Too many orders, try again in 2 minutes";
+const MENU_CACHE_CONTROL = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
+
+if (!globalThis.__stall42TrafficState) {
+  globalThis.__stall42TrafficState = {
+    checkoutQueueDepth: 0,
+    checkoutQueueTail: Promise.resolve(),
+    lastRateLimitCleanupAt: 0,
+    rateLimits: new Map(),
+  };
+}
+
+const trafficState = globalThis.__stall42TrafficState;
+
 const fallbackMenu = [
   {
     id: "cat-drinks",
@@ -188,13 +211,6 @@ function createDatabasePool() {
 let pool = null;
 let poolSetupError = null;
 
-try {
-  pool = createDatabasePool();
-} catch (error) {
-  poolSetupError = error;
-  console.error("Failed to initialize database pool.", error);
-}
-
 if (!globalThis.__stall42DemoState) {
   globalThis.__stall42DemoState = {
     orders: [],
@@ -222,19 +238,35 @@ function getStatusCode(error, fallbackStatusCode) {
   return Number(error?.statusCode) || fallbackStatusCode;
 }
 
-function sendJson(response, statusCode, payload) {
+function applyHeaders(response, headers = {}) {
+  Object.entries(headers).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      response.setHeader(key, value);
+    }
+  });
+}
+
+function sendJson(response, statusCode, payload, headers = {}) {
   if (!response.headersSent) {
     response.statusCode = statusCode;
     response.setHeader("Content-Type", "application/json; charset=utf-8");
+    applyHeaders(response, headers);
   }
 
   response.end(JSON.stringify(payload));
 }
 
-function sendText(response, statusCode, body, contentType = "text/plain; charset=utf-8") {
+function sendText(
+  response,
+  statusCode,
+  body,
+  contentType = "text/plain; charset=utf-8",
+  headers = {},
+) {
   if (!response.headersSent) {
     response.statusCode = statusCode;
     response.setHeader("Content-Type", contentType);
+    applyHeaders(response, headers);
   }
 
   response.end(body);
@@ -257,7 +289,181 @@ function sendMethodNotAllowed(response, allowedMethods) {
   sendJson(response, 405, { error: "Method not allowed." });
 }
 
+function getClientIp(request) {
+  const headerCandidates = [
+    "x-forwarded-for",
+    "x-real-ip",
+    "cf-connecting-ip",
+    "true-client-ip",
+  ];
+
+  for (const headerName of headerCandidates) {
+    const value = getHeader(request, headerName);
+
+    if (value) {
+      const forwardedIp = value.split(",")[0].trim();
+
+      if (forwardedIp) {
+        return forwardedIp.replace(/^::ffff:/, "");
+      }
+    }
+  }
+
+  const socketIp =
+    request.socket?.remoteAddress || request.connection?.remoteAddress || "unknown";
+
+  return String(socketIp).replace(/^::ffff:/, "");
+}
+
+function cleanupRateLimitState(now = Date.now()) {
+  if (now - trafficState.lastRateLimitCleanupAt < RATE_LIMIT_WINDOW_MS) {
+    return;
+  }
+
+  trafficState.lastRateLimitCleanupAt = now;
+
+  for (const [ip, bucket] of trafficState.rateLimits.entries()) {
+    if (bucket.resetAt <= now) {
+      trafficState.rateLimits.delete(ip);
+    }
+  }
+}
+
+function consumeRateLimit(request) {
+  const now = Date.now();
+
+  if (!RATE_LIMIT_ENABLED) {
+    return {
+      allowed: true,
+      limit: RATE_LIMIT_MAX_REQUESTS,
+      remaining: RATE_LIMIT_MAX_REQUESTS,
+      resetAt: now + RATE_LIMIT_WINDOW_MS,
+      retryAfterSeconds: 0,
+    };
+  }
+
+  cleanupRateLimitState(now);
+
+  const ip = getClientIp(request);
+  const bucket = trafficState.rateLimits.get(ip);
+
+  if (!bucket || bucket.resetAt <= now) {
+    const resetAt = now + RATE_LIMIT_WINDOW_MS;
+    trafficState.rateLimits.set(ip, { count: 1, resetAt });
+
+    return {
+      allowed: true,
+      limit: RATE_LIMIT_MAX_REQUESTS,
+      remaining: RATE_LIMIT_MAX_REQUESTS - 1,
+      resetAt,
+      retryAfterSeconds: 0,
+    };
+  }
+
+  bucket.count += 1;
+
+  if (bucket.count > RATE_LIMIT_MAX_REQUESTS) {
+    return {
+      allowed: false,
+      limit: RATE_LIMIT_MAX_REQUESTS,
+      remaining: 0,
+      resetAt: bucket.resetAt,
+      retryAfterSeconds: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
+    };
+  }
+
+  return {
+    allowed: true,
+    limit: RATE_LIMIT_MAX_REQUESTS,
+    remaining: Math.max(0, RATE_LIMIT_MAX_REQUESTS - bucket.count),
+    resetAt: bucket.resetAt,
+    retryAfterSeconds: 0,
+  };
+}
+
+function enqueueCheckoutJob(job) {
+  if (trafficState.checkoutQueueDepth >= CHECKOUT_QUEUE_LIMIT) {
+    throw createHttpError(503, CHECKOUT_QUEUE_MESSAGE);
+  }
+
+  trafficState.checkoutQueueDepth += 1;
+
+  const jobPromise = trafficState.checkoutQueueTail.then(() => job());
+  trafficState.checkoutQueueTail = jobPromise.catch(() => {});
+
+  return jobPromise.finally(() => {
+    trafficState.checkoutQueueDepth = Math.max(0, trafficState.checkoutQueueDepth - 1);
+  });
+}
+
+function withTrafficProtections(handler, options = {}) {
+  const {
+    cacheControl = "no-store",
+    fallbackMessage = "Unable to process this request.",
+    useCheckoutQueue = false,
+  } = options;
+
+  return async function protectedHandler(request, response, params = {}) {
+    const rateLimit = consumeRateLimit(request);
+
+    response.setHeader("Cache-Control", cacheControl);
+    response.setHeader("X-RateLimit-Limit", String(rateLimit.limit));
+    response.setHeader("X-RateLimit-Remaining", String(rateLimit.remaining));
+    response.setHeader("X-RateLimit-Reset", String(Math.ceil(rateLimit.resetAt / 1000)));
+
+    if (!rateLimit.allowed) {
+      response.setHeader("Retry-After", String(rateLimit.retryAfterSeconds));
+      return sendJson(response, 429, {
+        error: RATE_LIMIT_MESSAGE,
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+      });
+    }
+
+    try {
+      if (useCheckoutQueue) {
+        return await enqueueCheckoutJob(() => handler(request, response, params));
+      }
+
+      return await handler(request, response, params);
+    } catch (error) {
+      const statusCode = getStatusCode(error, 500);
+
+      if (useCheckoutQueue && statusCode === 503) {
+        return sendJson(response, 503, {
+          error: formatError(error, CHECKOUT_QUEUE_MESSAGE),
+        });
+      }
+
+      if (!response.headersSent) {
+        return sendError(response, error, fallbackMessage, statusCode);
+      }
+
+      return null;
+    }
+  };
+}
+
 function requireDatabase() {
+  if (!DATABASE_URL) {
+    throw createHttpError(503, "Supabase database is not configured.");
+  }
+
+  if (poolSetupError) {
+    throw createHttpError(
+      500,
+      `Database configuration error: ${formatError(poolSetupError, "Unable to initialize database.")}`,
+    );
+  }
+
+  if (!pool) {
+    try {
+      pool = createDatabasePool();
+    } catch (error) {
+      poolSetupError = error;
+      console.error("Failed to initialize database pool.", error);
+    }
+  }
+
   if (poolSetupError) {
     throw createHttpError(
       500,
@@ -270,12 +476,6 @@ function requireDatabase() {
   }
 
   return pool;
-}
-
-function requireDemoMode() {
-  if (!DEMO_MODE_ENABLED) {
-    throw createHttpError(503, "Supabase database is not configured.");
-  }
 }
 
 function getHeader(request, name) {
@@ -357,24 +557,26 @@ async function fetchMenuFromDatabase() {
 }
 
 async function getMenuData() {
-  if (!pool) {
-    requireDemoMode();
+  if (!DATABASE_URL) {
     return fallbackMenu;
   }
 
-  return fetchMenuFromDatabase();
+  try {
+    return await fetchMenuFromDatabase();
+  } catch (error) {
+    return fallbackMenu;
+  }
 }
 
 async function getMenuItemsByIds(itemIds) {
-  if (!pool) {
-    requireDemoMode();
+  if (!DATABASE_URL) {
     const itemMap = new Map(getFallbackItems().map((item) => [item.id, item]));
     return itemIds.map((itemId) => itemMap.get(itemId)).filter(Boolean);
   }
 
   const activePool = requireDatabase();
   const result = await activePool.query(
-    "select id, category_id, name, slug, description, price_paise, icon, image_url, is_featured, is_active, sort_order, prep_time_mins from menu_items where id::text = any($1::text[]) and is_active = true",
+    "select id, name, price_paise, prep_time_mins from menu_items where id::text = any($1::text[]) and is_active = true",
     [itemIds.map((itemId) => String(itemId))],
   );
 
@@ -490,8 +692,7 @@ function attachPaymentMeta(order, paymentRow) {
 }
 
 async function getOrderByPublicId(publicId) {
-  if (!pool) {
-    requireDemoMode();
+  if (!DATABASE_URL) {
     return demoState.orders.find((order) => order.public_id === publicId) || null;
   }
 
@@ -522,8 +723,7 @@ async function getOrderByPublicId(publicId) {
 }
 
 async function listRecentOrders() {
-  if (!pool) {
-    requireDemoMode();
+  if (!DATABASE_URL) {
     return [...demoState.orders].sort(
       (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
     );
@@ -664,7 +864,11 @@ function getDatabaseMode() {
     return "invalid";
   }
 
-  return pool ? "supabase" : DEMO_MODE_ENABLED ? "demo" : "missing";
+  if (DATABASE_URL) {
+    return "supabase";
+  }
+
+  return DEMO_MODE_ENABLED ? "demo" : "missing";
 }
 
 async function handleHealth(request, response) {
@@ -694,6 +898,8 @@ async function handleMenu(request, response) {
         upiId: UPI_ID,
         payeeName: UPI_NAME,
       },
+    }, {
+      "Cache-Control": MENU_CACHE_CONTROL,
     });
   } catch (error) {
     sendError(response, error, "Unable to load menu.");
@@ -712,8 +918,7 @@ async function handleCheckout(request, response) {
     const subtotalPaise = calculateSubtotal(validated.items, menuItems);
     const readyAt = estimateReadyAt(validated.items, menuItems);
 
-    if (!pool) {
-      requireDemoMode();
+    if (!DATABASE_URL) {
 
       const publicId = buildDemoOrderId();
       const createdAt = new Date().toISOString();
@@ -781,19 +986,40 @@ async function handleCheckout(request, response) {
 
       const order = orderResult.rows[0];
       const menuItemMap = new Map(menuItems.map((item) => [item.id, item]));
-
-      for (const line of validated.items) {
+      const orderItemRows = validated.items.map((line) => {
         const item = menuItemMap.get(line.itemId);
 
         if (!item) {
           throw createHttpError(400, "One of the selected items is no longer available.");
         }
 
-        await databaseClient.query(
-          "insert into order_items (order_id, menu_item_id, item_name, quantity, unit_price_paise) values ($1, $2, $3, $4, $5)",
-          [order.id, item.id, item.name, Number(line.quantity), Number(item.price_paise)],
-        );
-      }
+        return {
+          menu_item_id: item.id,
+          item_name: item.name,
+          quantity: Number(line.quantity),
+          unit_price_paise: Number(item.price_paise),
+        };
+      });
+
+      await databaseClient.query(
+        `insert into order_items (
+          order_id,
+          menu_item_id,
+          item_name,
+          quantity,
+          unit_price_paise
+        )
+        select $1, values.menu_item_id, values.item_name, values.quantity, values.unit_price_paise
+        from unnest($2::uuid[], $3::text[], $4::integer[], $5::integer[])
+          as values(menu_item_id, item_name, quantity, unit_price_paise)`,
+        [
+          order.id,
+          orderItemRows.map((row) => row.menu_item_id),
+          orderItemRows.map((row) => row.item_name),
+          orderItemRows.map((row) => row.quantity),
+          orderItemRows.map((row) => row.unit_price_paise),
+        ],
+      );
 
       await databaseClient.query("commit");
 
@@ -860,8 +1086,7 @@ async function handleConfirmPayment(request, response, params = {}) {
       return sendJson(response, 400, { error: "Order token is required." });
     }
 
-    if (!pool) {
-      requireDemoMode();
+    if (!DATABASE_URL) {
 
       const order = demoState.orders.find((entry) => entry.public_id === publicId);
 
@@ -966,8 +1191,10 @@ async function handleAdminOrders(request, response) {
 }
 
 async function handleAdminOrder(request, response, params = {}) {
-  if (getMethod(request) !== "PATCH") {
-    return sendMethodNotAllowed(response, ["PATCH"]);
+  const method = getMethod(request);
+
+  if (method !== "PATCH" && method !== "DELETE") {
+    return sendMethodNotAllowed(response, ["PATCH", "DELETE"]);
   }
 
   const allowedStatuses = new Set(["pending", "paid", "preparing", "ready", "completed"]);
@@ -975,27 +1202,57 @@ async function handleAdminOrder(request, response, params = {}) {
   try {
     requireAdmin(request);
 
-    const body = await readRequestBody(request);
-    const nextStatus = String(body.status || "").trim();
     const publicId = resolvePublicId(request, params);
-
-    if (!allowedStatuses.has(nextStatus)) {
-      return sendJson(response, 400, { error: "Invalid order status." });
-    }
 
     if (!publicId) {
       return sendJson(response, 400, { error: "Order token is required." });
     }
 
-    if (!pool) {
-      requireDemoMode();
+    if (method === "DELETE") {
+      if (!DATABASE_URL) {
+        const nextOrders = demoState.orders.filter((entry) => entry.public_id !== publicId);
 
-      const order = demoState.orders.find((entry) => entry.public_id === publicId);
+        if (nextOrders.length === demoState.orders.length) {
+          return sendJson(response, 404, { error: "Order not found." });
+        }
 
-      if (!order) {
+        demoState.orders = nextOrders;
+        return sendJson(response, 200, { success: true });
+      }
+
+      const activePool = requireDatabase();
+      const deleteResult = await activePool.query(
+        "delete from orders where public_id = $1 returning id",
+        [publicId],
+      );
+
+      if (!deleteResult.rows.length) {
         return sendJson(response, 404, { error: "Order not found." });
       }
 
+      return sendJson(response, 200, { success: true });
+    }
+
+    const body = await readRequestBody(request);
+    const nextStatus = String(body.status || "").trim();
+
+    if (!allowedStatuses.has(nextStatus)) {
+      return sendJson(response, 400, { error: "Invalid order status." });
+    }
+
+    if (!DATABASE_URL) {
+      const orderIndex = demoState.orders.findIndex((entry) => entry.public_id === publicId);
+
+      if (orderIndex === -1) {
+        return sendJson(response, 404, { error: "Order not found." });
+      }
+
+      if (nextStatus === "completed") {
+        demoState.orders.splice(orderIndex, 1);
+        return sendJson(response, 200, { success: true });
+      }
+
+      const order = demoState.orders[orderIndex];
       order.status = nextStatus;
       if (nextStatus === "paid") {
         order.payment_status = "captured";
@@ -1008,6 +1265,19 @@ async function handleAdminOrder(request, response, params = {}) {
     }
 
     const activePool = requireDatabase();
+    if (nextStatus === "completed") {
+      const deleteResult = await activePool.query(
+        "delete from orders where public_id = $1 returning id",
+        [publicId],
+      );
+
+      if (!deleteResult.rows.length) {
+        return sendJson(response, 404, { error: "Order not found." });
+      }
+
+      return sendJson(response, 200, { success: true });
+    }
+
     const updateResult = await activePool.query(
       "update orders set status = $1, payment_status = case when $1 = 'paid' then 'captured' else payment_status end where public_id = $2 returning id",
       [nextStatus, publicId],
@@ -1026,7 +1296,7 @@ async function handleAdminOrder(request, response, params = {}) {
 
     sendJson(response, 200, { success: true });
   } catch (error) {
-    sendError(response, error, "Unable to update order status.", 400);
+    sendError(response, error, "Unable to update or delete order.", 400);
   }
 }
 
@@ -1039,16 +1309,42 @@ function getRuntimeInfo() {
   };
 }
 
+const protectedHandleHealth = withTrafficProtections(handleHealth, {
+  fallbackMessage: "Unable to load health status.",
+});
+const protectedHandleMenu = withTrafficProtections(handleMenu, {
+  fallbackMessage: "Unable to load menu.",
+});
+const protectedHandleCheckout = withTrafficProtections(handleCheckout, {
+  fallbackMessage: "Unable to start checkout.",
+  useCheckoutQueue: true,
+});
+const protectedHandleConfirmPayment = withTrafficProtections(handleConfirmPayment, {
+  fallbackMessage: "Unable to confirm your payment submission.",
+});
+const protectedHandleOrder = withTrafficProtections(handleOrder, {
+  fallbackMessage: "Unable to load order.",
+});
+const protectedHandleAdminOrders = withTrafficProtections(handleAdminOrders, {
+  fallbackMessage: "Unable to load admin orders.",
+});
+const protectedHandleAdminOrder = withTrafficProtections(handleAdminOrder, {
+  fallbackMessage: "Unable to update or delete order.",
+});
+const protectedHandleUpiQr = withTrafficProtections(handleUpiQr, {
+  fallbackMessage: "Unable to generate QR.",
+});
+
 module.exports = {
   getRuntimeInfo,
-  handleAdminOrder,
-  handleAdminOrders,
-  handleCheckout,
-  handleConfirmPayment,
-  handleHealth,
-  handleMenu,
-  handleOrder,
-  handleUpiQr,
+  handleAdminOrder: protectedHandleAdminOrder,
+  handleAdminOrders: protectedHandleAdminOrders,
+  handleCheckout: protectedHandleCheckout,
+  handleConfirmPayment: protectedHandleConfirmPayment,
+  handleHealth: protectedHandleHealth,
+  handleMenu: protectedHandleMenu,
+  handleOrder: protectedHandleOrder,
+  handleUpiQr: protectedHandleUpiQr,
   redirect,
   sendJson,
   sendText,

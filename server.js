@@ -37,6 +37,32 @@ function contentTypeFor(filePath) {
   return MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream";
 }
 
+function cacheControlFor(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+
+  if (extension === ".html" || extension === ".json") {
+    return "no-store";
+  }
+
+  if (
+    [
+      ".css",
+      ".ico",
+      ".jpeg",
+      ".jpg",
+      ".js",
+      ".png",
+      ".svg",
+      ".txt",
+      ".webp",
+    ].includes(extension)
+  ) {
+    return "public, max-age=3600, stale-while-revalidate=86400";
+  }
+
+  return "public, max-age=300";
+}
+
 function safePublicPath(pathname) {
   try {
     const decodedPath = decodeURIComponent(pathname);
@@ -132,6 +158,7 @@ async function serveStatic(response, pathname) {
 
     response.statusCode = 200;
     response.setHeader("Content-Type", contentTypeFor(filePath));
+    response.setHeader("Cache-Control", cacheControlFor(filePath));
     fs.createReadStream(filePath).pipe(response);
   } catch (error) {
     if (!path.extname(pathname)) {

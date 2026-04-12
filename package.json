@@ -16,6 +16,7 @@
     "debug": "4.4.3",
     "dotenv": "16.6.1",
     "express": "4.22.1",
+    "lru-cache": "^11.3.3",
     "pg": "8.20.0",
     "pg-protocol": "1.10.3",
     "qrcode": "1.5.4"
