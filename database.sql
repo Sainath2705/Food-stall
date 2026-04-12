@@ -100,12 +100,16 @@ execute function set_updated_at();
 
 insert into categories (name, slug, sort_order)
 values
-  ('Drinks', 'drinks', 1),
+  ('Cool Drinks', 'drinks', 1),
   ('Snacks', 'snacks', 2)
 on conflict (slug) do update
 set
   name = excluded.name,
   sort_order = excluded.sort_order;
+
+update menu_items
+set is_active = false
+where slug in ('tea', 'coffee', 'omelette');
 
 with drinks as (
   select id from categories where slug = 'drinks'
@@ -127,12 +131,14 @@ insert into menu_items (
   prep_time_mins
 )
 values
-  ((select id from drinks), 'Tea', 'tea', 'Freshly brewed tea to kickstart your class break.', 1000, 'coffee', null, false, true, 1, 3),
-  ((select id from drinks), 'Coffee', 'coffee', 'Strong and hot, made for quick campus energy.', 1500, 'local_cafe', null, false, true, 2, 4),
-  ((select id from drinks), 'Coke', 'coke', 'Ice-cold fizzy refreshment for the afternoon rush.', 2000, 'water_drop', null, false, true, 3, 1),
-  ((select id from snacks), 'Maggi', 'maggi', 'The classic college comfort bowl. Hot, quick, and spicy.', 3000, 'ramen_dining', 'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?auto=format&fit=crop&w=1200&q=80', true, true, 1, 8),
-  ((select id from snacks), 'Omelette', 'omelette', 'Soft, hot omelette folded fresh on the tawa.', 2500, 'egg', null, false, true, 2, 6),
-  ((select id from snacks), 'Bread Omelette', 'bread-omelette', 'A loaded hostel favorite that eats like a full meal.', 4000, 'breakfast_dining', null, false, true, 3, 7)
+  ((select id from drinks), 'Coke', 'coke', '', 2000, 'water_drop', 'https://images.pexels.com/photos/25291886/pexels-photo-25291886.jpeg?cs=srgb&dl=pexels-olenkabohovyk-25291886.jpg&fm=jpg', false, true, 1, 1),
+  ((select id from snacks), 'Maggi', 'maggi', '', 3000, 'ramen_dining', 'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?auto=format&fit=crop&w=1200&q=80', false, true, 1, 8),
+  ((select id from snacks), 'Single Egg Omelette', 'single-omelette', '', 2000, 'egg', 'https://tse1.mm.bing.net/th/id/OIP.hnWK7pz-awMn0-hbP0AU2QHaLH?pid=Api&P=0&h=180', false, true, 2, 6),
+  ((select id from snacks), 'Double Egg Omelette', 'double-omelette', '', 3000, 'egg', 'https://www.indianhealthyrecipes.com/wp-content/uploads/2024/06/egg-oats-omelette.jpg', false, true, 3, 7),
+  ((select id from snacks), 'Bread Omelette', 'bread-omelette', '', 4000, 'breakfast_dining', 'https://tse4.mm.bing.net/th/id/OIP.dAAXxm2FVTAOBgcDqnyOLAHaHa?pid=Api&P=0&h=180', true, true, 4, 7),
+  ((select id from snacks), 'Vada Pav', 'vada-pav', '', 2000, 'lunch_dining', 'https://tse1.mm.bing.net/th/id/OIP.rYFnUL1PfPfAjDiV6r2yWgHaHa?pid=Api&P=0&h=180', false, true, 5, 4),
+  ((select id from snacks), 'Samosa', 'samosa', '', 2000, 'bakery_dining', 'https://tse1.mm.bing.net/th/id/OIP.gzfLita-jg6Uhv0TfA8RZgHaHa?pid=Api&P=0&h=180', false, true, 6, 3),
+  ((select id from snacks), 'Veg Sandwich', 'veg-sandwich', '', 3000, 'breakfast_dining', 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=1200&q=80', false, true, 7, 5)
 on conflict (slug) do update
 set
   category_id = excluded.category_id,

@@ -29,8 +29,9 @@
           <p class="eyebrow">Scan. Order. Pay. Pick Up.</p>
           <h2>Quick bites built for the college rush.</h2>
           <p class="hero-text">
-            Skip the line, pay with UPI, and collect your order when it is ready. This
-            flow is built for fast stall traffic and manual payment confirmation.
+            Fresh omelettes, Maggi, sandwiches, and snack staples ready for the next
+            lecture break. Order fast, pay with UPI, and collect when the stall team
+            marks it ready.
           </p>
           <div class="hero-actions">
             <button class="primary-button" id="heroCheckoutButton" type="button">
@@ -40,15 +41,23 @@
           </div>
         </div>
         <div class="featured-spot" id="featuredSpot">
-          <div class="featured-media" id="featuredMedia">HOT</div>
+          <div class="featured-media" id="featuredMedia" aria-label="Bread Omelette visual">
+            <span
+              aria-hidden="true"
+              class="featured-media-art"
+              id="featuredMediaArt"
+            ></span>
+            <span aria-hidden="true" class="featured-media-glyph" id="featuredMediaGlyph"
+              >EGG</span
+            >
+          </div>
           <div class="featured-copy">
             <p class="eyebrow">Bestseller</p>
-            <h3 id="featuredName">Maggi</h3>
-            <p id="featuredDescription">The classic college comfort bowl.</p>
+            <h3 id="featuredName">Bread Omelette</h3>
             <div class="featured-meta">
-              <span id="featuredPrice">₹30</span>
+              <span id="featuredPrice">₹40</span>
               <button class="secondary-button" id="featuredAddButton" type="button">
-                Add Featured Item
+                Add Bestseller
               </button>
             </div>
           </div>
@@ -190,7 +199,12 @@
               <div class="qr-image-shell">
                 <img id="gpayQrImage" alt="Google Pay QR code" />
               </div>
-              <button class="primary-button full-width payment-app-button" data-app="gpay" id="gpayOpenButton" type="button">
+              <button
+                class="primary-button full-width payment-app-button"
+                data-app="gpay"
+                id="gpayOpenButton"
+                type="button"
+              >
                 Open Google Pay
               </button>
             </article>
@@ -205,7 +219,12 @@
               <div class="qr-image-shell">
                 <img id="phonepeQrImage" alt="PhonePe QR code" />
               </div>
-              <button class="primary-button full-width payment-app-button" data-app="phonepe" id="phonepeOpenButton" type="button">
+              <button
+                class="primary-button full-width payment-app-button"
+                data-app="phonepe"
+                id="phonepeOpenButton"
+                type="button"
+              >
                 Open PhonePe
               </button>
             </article>

@@ -67,13 +67,17 @@ create index if not exists idx_payments_order_id on payments(order_id, created_a
 
 insert into categories (id, name, slug, sort_order)
 values
-  ('10000000-0000-0000-0000-000000000001', 'Drinks', 'drinks', 1),
+  ('10000000-0000-0000-0000-000000000001', 'Cool Drinks', 'drinks', 1),
   ('10000000-0000-0000-0000-000000000002', 'Snacks', 'snacks', 2)
 on conflict (id) do update
 set
   name = excluded.name,
   slug = excluded.slug,
   sort_order = excluded.sort_order;
+
+update menu_items
+set is_active = false
+where slug in ('tea', 'coffee', 'omelette');
 
 insert into menu_items (
   id,
@@ -93,86 +97,114 @@ values
   (
     '20000000-0000-0000-0000-000000000001',
     '10000000-0000-0000-0000-000000000001',
-    'Tea',
-    'tea',
-    'Freshly brewed tea to kickstart your class break.',
-    1000,
-    'coffee',
-    null,
+    'Coke',
+    'coke',
+    '',
+    2000,
+    'water_drop',
+    'https://images.pexels.com/photos/25291886/pexels-photo-25291886.jpeg?cs=srgb&dl=pexels-olenkabohovyk-25291886.jpg&fm=jpg',
     false,
     true,
     1,
-    3
+    1
   ),
   (
     '20000000-0000-0000-0000-000000000002',
-    '10000000-0000-0000-0000-000000000001',
-    'Coffee',
-    'coffee',
-    'Strong and hot, made for quick campus energy.',
-    1500,
-    'local_cafe',
-    null,
+    '10000000-0000-0000-0000-000000000002',
+    'Maggi',
+    'maggi',
+    '',
+    3000,
+    'ramen_dining',
+    'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?auto=format&fit=crop&w=1200&q=80',
     false,
     true,
     2,
-    4
+    8
   ),
   (
     '20000000-0000-0000-0000-000000000003',
-    '10000000-0000-0000-0000-000000000001',
-    'Coke',
-    'coke',
-    'Ice-cold fizzy refreshment for the afternoon rush.',
+    '10000000-0000-0000-0000-000000000002',
+    'Single Egg Omelette',
+    'single-omelette',
+    '',
     2000,
-    'water_drop',
-    null,
+    'egg',
+    'https://tse1.mm.bing.net/th/id/OIP.hnWK7pz-awMn0-hbP0AU2QHaLH?pid=Api&P=0&h=180',
     false,
     true,
     3,
-    1
+    6
   ),
   (
     '20000000-0000-0000-0000-000000000004',
     '10000000-0000-0000-0000-000000000002',
-    'Maggi',
-    'maggi',
-    'The classic college comfort bowl. Hot, quick, and spicy.',
+    'Double Egg Omelette',
+    'double-omelette',
+    '',
     3000,
-    'ramen_dining',
-    'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?auto=format&fit=crop&w=1200&q=80',
+    'egg',
+    'https://www.indianhealthyrecipes.com/wp-content/uploads/2024/06/egg-oats-omelette.jpg',
+    false,
     true,
-    true,
-    1,
-    8
+    4,
+    7
   ),
   (
     '20000000-0000-0000-0000-000000000005',
     '10000000-0000-0000-0000-000000000002',
-    'Omelette',
-    'omelette',
-    'Soft, hot omelette folded fresh on the tawa.',
-    2500,
-    'egg',
-    null,
-    false,
+    'Bread Omelette',
+    'bread-omelette',
+    '',
+    4000,
+    'breakfast_dining',
+    'https://tse4.mm.bing.net/th/id/OIP.dAAXxm2FVTAOBgcDqnyOLAHaHa?pid=Api&P=0&h=180',
     true,
-    2,
-    6
+    true,
+    5,
+    7
   ),
   (
     '20000000-0000-0000-0000-000000000006',
     '10000000-0000-0000-0000-000000000002',
-    'Bread Omelette',
-    'bread-omelette',
-    'A loaded hostel favorite that eats like a full meal.',
-    4000,
-    'breakfast_dining',
-    null,
+    'Vada Pav',
+    'vada-pav',
+    '',
+    2000,
+    'lunch_dining',
+    'https://tse1.mm.bing.net/th/id/OIP.rYFnUL1PfPfAjDiV6r2yWgHaHa?pid=Api&P=0&h=180',
     false,
     true,
-    3,
-    7
+    6,
+    4
+  ),
+  (
+    '20000000-0000-0000-0000-000000000007',
+    '10000000-0000-0000-0000-000000000002',
+    'Samosa',
+    'samosa',
+    '',
+    2000,
+    'bakery_dining',
+    'https://tse1.mm.bing.net/th/id/OIP.gzfLita-jg6Uhv0TfA8RZgHaHa?pid=Api&P=0&h=180',
+    false,
+    true,
+    7,
+    3
+  ),
+  (
+    '20000000-0000-0000-0000-000000000008',
+    '10000000-0000-0000-0000-000000000002',
+    'Veg Sandwich',
+    'veg-sandwich',
+    '',
+    3000,
+    'breakfast_dining',
+    'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=1200&q=80',
+    false,
+    true,
+    8,
+    5
   )
 on conflict (id) do update
 set

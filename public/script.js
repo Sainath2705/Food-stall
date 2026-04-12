@@ -9,13 +9,17 @@ const state = {
   selectedPaymentApp: "gpay"
 };
 
+const DEFAULT_FEATURED_SLUG = "bread-omelette";
+
 const elements = {
   heroCheckoutButton: document.getElementById("heroCheckoutButton"),
   heroStatusChip: document.getElementById("heroStatusChip"),
+  featuredSpot: document.getElementById("featuredSpot"),
   featuredName: document.getElementById("featuredName"),
-  featuredDescription: document.getElementById("featuredDescription"),
   featuredPrice: document.getElementById("featuredPrice"),
   featuredMedia: document.getElementById("featuredMedia"),
+  featuredMediaArt: document.getElementById("featuredMediaArt"),
+  featuredMediaGlyph: document.getElementById("featuredMediaGlyph"),
   featuredAddButton: document.getElementById("featuredAddButton"),
   categoryTabs: document.getElementById("categoryTabs"),
   menuGrid: document.getElementById("menuGrid"),
@@ -58,11 +62,16 @@ function formatCurrency(paise) {
 }
 
 function glyphForItem(slug) {
-  if (slug.includes("tea")) return "TEA";
-  if (slug.includes("coffee")) return "CAF";
-  if (slug.includes("coke")) return "POP";
-  if (slug.includes("omelette")) return "EGG";
-  if (slug.includes("maggi")) return "HOT";
+  const normalizedSlug = String(slug || "").toLowerCase();
+
+  if (normalizedSlug.includes("coke")) return "POP";
+  if (normalizedSlug.includes("omelette")) return "EGG";
+  if (normalizedSlug.includes("maggi")) return "HOT";
+  if (normalizedSlug.includes("vada")) return "VAD";
+  if (normalizedSlug.includes("samosa")) return "SAM";
+  if (normalizedSlug.includes("sandwich")) return "VEG";
+  if (normalizedSlug.includes("tea")) return "TEA";
+  if (normalizedSlug.includes("coffee")) return "CAF";
   return "BITE";
 }
 
@@ -75,7 +84,14 @@ function getItem(itemId) {
 }
 
 function getFeaturedItem() {
-  return getAllItems().find((item) => item.is_featured) || getAllItems()[0] || null;
+  const allItems = getAllItems();
+
+  return (
+    allItems.find((item) => item.slug === DEFAULT_FEATURED_SLUG) ||
+    allItems.find((item) => item.is_featured) ||
+    allItems[0] ||
+    null
+  );
 }
 
 function getVisibleItems() {
@@ -139,7 +155,7 @@ function updateQuantity(itemId, quantity) {
     }
   }
 
-  render();
+  render({ animateMenu: false });
 }
 
 function addItem(itemId) {
@@ -181,17 +197,27 @@ function renderFeatured() {
     return;
   }
 
+  const hasImage = Boolean(featuredItem.image_url);
+
   elements.featuredName.textContent = featuredItem.name;
-  elements.featuredDescription.textContent = featuredItem.description;
   elements.featuredPrice.textContent = formatCurrency(featuredItem.price_paise);
   elements.featuredAddButton.onclick = () => addItem(featuredItem.id);
+  elements.featuredMedia.setAttribute("aria-label", `${featuredItem.name} visual`);
+  elements.featuredMedia.classList.toggle("has-image", hasImage);
+  elements.featuredMedia.classList.toggle("no-image", !hasImage);
 
-  if (featuredItem.image_url) {
-    elements.featuredMedia.textContent = "";
-    elements.featuredMedia.style.backgroundImage = `linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.22)), url('${featuredItem.image_url}')`;
-  } else {
-    elements.featuredMedia.style.backgroundImage = "";
-    elements.featuredMedia.textContent = glyphForItem(featuredItem.slug);
+  if (elements.featuredMediaGlyph) {
+    elements.featuredMediaGlyph.textContent = glyphForItem(featuredItem.slug);
+  }
+
+  if (elements.featuredMediaArt) {
+    elements.featuredMediaArt.style.backgroundImage = hasImage
+      ? `url('${featuredItem.image_url}')`
+      : "";
+  }
+
+  if (!hasImage && elements.featuredMediaArt) {
+    elements.featuredMediaArt.style.backgroundImage = "";
   }
 }
 
@@ -229,8 +255,9 @@ function renderCategories() {
   });
 }
 
-function renderMenu() {
+function renderMenu(animate = true) {
   const visibleItems = getVisibleItems();
+  elements.menuGrid.dataset.animate = animate ? "true" : "false";
 
   if (!visibleItems.length) {
     elements.menuGrid.innerHTML = `
@@ -242,7 +269,7 @@ function renderMenu() {
   }
 
   elements.menuGrid.innerHTML = visibleItems
-    .map((item) => {
+    .map((item, index) => {
       const line = getCartLine(item.id);
       const quantity = Number(line?.quantity || 0);
       const mediaStyle = item.image_url
@@ -250,14 +277,13 @@ function renderMenu() {
         : "";
 
       return `
-        <article class="menu-card">
+        <article class="menu-card" style="--card-index: ${index};">
           <div class="menu-media" ${mediaStyle}>${item.image_url ? "" : glyphForItem(item.slug)}</div>
           <div>
             <div class="meta-row">
               <h3>${item.name}</h3>
               ${item.is_featured ? '<span class="badge">Bestseller</span>' : ""}
             </div>
-            <p>${item.description}</p>
             <div class="meta-row">
               <span class="price-tag">${formatCurrency(item.price_paise)}</span>
               <span class="price-tag">${item.prep_time_mins} min prep</span>
@@ -369,10 +395,12 @@ function renderPaymentStep() {
   elements.phonepeOpenButton.classList.remove("selected");
 }
 
-function render() {
+function render(options = {}) {
+  const { animateMenu = true } = options;
+
   renderFeatured();
   renderCategories();
-  renderMenu();
+  renderMenu(animateMenu);
   renderCart();
   renderPaymentStep();
 }
